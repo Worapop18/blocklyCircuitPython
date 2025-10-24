@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blockly + Custom Blocks</title>
+<script src="https://unpkg.com/blockly/blockly.min.js"></script>
+<script src="https://unpkg.com/blockly/python_compressed.js"></script>
+<style>
+body { margin:0; font-family:sans-serif; background:#eef3ff; }
+h1 { margin:0; padding:10px 20px; background:#4a90e2; color:white; }
+.main { display:flex; height: calc(100vh - 50px); }
+#blocklyDiv { height:100%; width:70%; }
+.code-panel { width:30%; background:white; box-shadow:-2px 0 10px rgba(0,0,0,0.1); display:flex; flex-direction:column; padding:5px; }
+.code-panel h3 { margin:0; padding:10px; background:#ddd; }
+pre { background:#1e1e1e; color:#00ff6a; padding:10px; border-radius:6px; margin:5px 0; overflow:auto; font-family: monospace; }
+#code-output { height: 200px; }
+#runResult { height: 150px; background:#f0f0f0; color:black; }
+.button-group { display:flex; justify-content: space-between; margin:5px 0; }
+button { flex:1; margin:0 2px; padding:8px; border:none; border-radius:6px; cursor:pointer; font-size:14px; }
+#runBtn { background:#4CAF50; color:white; }
+#clearBtn { background:#E53935; color:white; }
+#exportBtn { background:#2196F3; color:white; }
+</style>
+</head>
+<body>
+<h1>Blockly + Custom Blocks</h1>
+<div class="main">
+  <div id="blocklyDiv"></div>
+  <div class="code-panel">
+    <h3>โค้ด CircuitPython</h3>
+    <pre id="code-output"># ลากบล็อกมาเพื่อสร้างโปรแกรม</pre>
+    <div class="button-group">
+      <button id="runBtn">▶️ รันโค้ดจำลอง</button>
+      <button id="clearBtn">🗑️ ล้างทั้งหมด</button>
+      <button id="exportBtn">📋 Export MicroPython</button>
+    </div>
+    <pre id="runResult">ผลลัพธ์จะปรากฏที่นี่</pre>
+  </div>
+</div>
+
+<!-- Toolbox -->
+<xml id="toolbox" style="display: none">
+  <category name="เริ่มโปรแกรม" colour="#4CAF50">
+    <block type="start_code"></block>
+  </category>
+  <category name="LED" colour="#AB47BC">
+    <block type="led_on"></block>
+    <block type="led_off"></block>
+  </category>
+  <category name="เวลา" colour="#FF7043">
+    <block type="sleep_block"><field name="SECONDS">1</field></block>
+  </category>
+  <category name="ปุ่มกด" colour="#5C6BC0">
+    <block type="button_read"></block>
+  </category>
+  <category name="Logic" colour="%{BKY_LOGIC_HUE}">
+    <block type="controls_if"></block>
+    <block type="logic_compare"></block>
+  </category>
+  <category name="Loops" colour="%{BKY_LOOPS_HUE}">
+    <block type="controls_repeat_ext">
+      <value name="TIMES"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+    </block>
+    <block type="controls_whileUntil"></block>
+  </category>
+  <category name="Math" colour="%{BKY_MATH_HUE}">
+    <block type="math_number"><field name="NUM">0</field></block>
+    <block type="math_arithmetic"></block>
+  </category>
+  <category name="Text" colour="%{BKY_TEXTS_HUE}">
+    <block type="text"></block>
+    <block type="text_print"></block>
+  </category>
+</xml>
+
+<script>
+const workspace = Blockly.inject('blocklyDiv', {
+  toolbox: document.getElementById('toolbox'),
+  trashcan: true,
+  zoom: { controls: true, wheel: true }
+});
+
+// ---------- Custom Blocks ----------
+Blockly.defineBlocksWithJsonArray([
+  { type: "start_code", message0: "เริ่มโปรแกรม", nextStatement: null, colour: 120 },
+  { type: "led_on", message0: "เปิดไฟ LED", previousStatement: null, nextStatement: null, colour: 290 },
+  { type: "led_off", message0: "ปิดไฟ LED", previousStatement: null, nextStatement: null, colour: 290 },
+  { type: "sleep_block", message0: "หน่วงเวลา %1 วินาที",
+    args0:[{type:"field_number",name:"SECONDS",value:1,min:0}],
+    previousStatement: null, nextStatement: null, colour: 30
+  },
+  { type: "button_read", message0: "อ่านค่าปุ่มกด (GP14)", output: "Boolean", colour: 230 }
+]);
+
+// ---------- Custom block code mapping ----------
+const CUSTOM_BLOCK_CODE = {
+  'start_code': () => "print('เริ่มโปรแกรม')\n",
+  'led_on': () => "led.value = True\n",
+  'led_off': () => "led.value = False\n",
+  'sleep_block': (block) => `time.sleep(${block.getFieldValue('SECONDS')})\n`,
+  'button_read': () => "button.value"
+};
+
+// ---------- Get code from a block (custom + built-in) ----------
+function getCodeFromBlock(block) {
+  if(!block) return '';
+  
+  // Custom block
+  if(CUSTOM_BLOCK_CODE[block.type]) {
+    const code = CUSTOM_BLOCK_CODE[block.type](block);
+    return code + getCodeFromBlock(block.getNextBlock());
+  }
+  
+  // Built-in block
+  let pyCode = Blockly.Python.blockToCode(block);
+  if(Array.isArray(pyCode)) pyCode = pyCode[0]; // สำหรับ output block
+  return pyCode;
+}
+
+// ---------- Update code display ----------
+const codeOutput = document.getElementById("code-output");
+function updateCodeDisplay() {
+  const topBlocks = workspace.getTopBlocks(true);
+  let codeLines = [];
+  topBlocks.forEach(block => {
+    codeLines.push(getCodeFromBlock(block));
+  });
+  codeOutput.textContent = codeLines.join('');
+}
+
+workspace.addChangeListener(updateCodeDisplay);
+updateCodeDisplay();
+
+// ---------- Buttons ----------
+document.getElementById("clearBtn").onclick = () => { workspace.clear(); updateCodeDisplay(); };
+document.getElementById("exportBtn").onclick = () => {
+  navigator.clipboard.writeText(codeOutput.textContent);
+  alert("คัดลอกโค้ดไป clipboard แล้ว!");
+};
+document.getElementById("runBtn").onclick = () => {
+  const result = document.getElementById("runResult");
+  const code = codeOutput.textContent;
+  result.textContent = code.trim() === '' ? '⚠️ ไม่มีโค้ดให้รัน' : '🚀 (โค้ดจำลอง)\n\n' + code;
+};
+</script>
+</body>
+</html>
