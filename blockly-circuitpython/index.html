@@ -24,7 +24,7 @@ button { flex:1; margin:0 2px; padding:8px; border:none; border-radius:6px; curs
 </style>
 </head>
 <body>
-<h1>Blockly + Custom Blocks</h1>
+<h1>Blockly Python</h1>
 <div class="main">
   <div id="blocklyDiv"></div>
   <div class="code-panel">
@@ -75,11 +75,30 @@ button { flex:1; margin:0 2px; padding:8px; border:none; border-radius:6px; curs
 </xml>
 
 <script>
+// ---------- Workspace ----------
 const workspace = Blockly.inject('blocklyDiv', {
   toolbox: document.getElementById('toolbox'),
   trashcan: true,
   zoom: { controls: true, wheel: true }
 });
+
+// ---------- repeat generator ----------
+Blockly.Python['controls_repeat_ext'] = function(block) {
+  const times = Blockly.Python.valueToCode(block,'TIMES',Blockly.Python.ORDER_NONE) || '0';
+  const branch = Blockly.Python.statementToCode(block,'DO') || Blockly.Python.PASS;
+  // จัด indentation ให้ branch
+  const indentedBranch = branch.split('\n').map(line => line ? '  ' + line : '').join('\n');
+  return `for i in range(${times}):\n${indentedBranch}\n`;
+};
+
+// while
+Blockly.Python['controls_whileUntil'] = function(block) {
+  const until = block.getFieldValue('MODE') === 'UNTIL';
+  let condition = Blockly.Python.valueToCode(block,'BOOL',Blockly.Python.ORDER_NONE) || 'False';
+  if (until) condition = 'not (' + condition + ')';
+  const branch = Blockly.Python.statementToCode(block,'DO') || Blockly.Python.PASS;
+  return `while ${condition}:\n${branch}`;
+};
 
 // ---------- Custom Blocks ----------
 Blockly.defineBlocksWithJsonArray([
@@ -93,42 +112,59 @@ Blockly.defineBlocksWithJsonArray([
   { type: "button_read", message0: "อ่านค่าปุ่มกด (GP14)", output: "Boolean", colour: 230 }
 ]);
 
-// ---------- Custom block code mapping ----------
+// ---------- Custom block code ----------
 const CUSTOM_BLOCK_CODE = {
-  'start_code': () => "print('เริ่มโปรแกรม')\n",
-  'led_on': () => "led.value = True\n",
-  'led_off': () => "led.value = False\n",
+  'start_code': "print('เริ่มโปรแกรม')\n",
+  'led_on': "led.value = True\n",
+  'led_off': "led.value = False\n",
   'sleep_block': (block) => `time.sleep(${block.getFieldValue('SECONDS')})\n`,
-  'button_read': () => "button.value"
+  'button_read': "button.value"
 };
 
-// ---------- Get code from a block (custom + built-in) ----------
-function getCodeFromBlock(block) {
-  if(!block) return '';
-  
-  // Custom block
-  if(CUSTOM_BLOCK_CODE[block.type]) {
-    const code = CUSTOM_BLOCK_CODE[block.type](block);
-    return code + getCodeFromBlock(block.getNextBlock());
+// ---------- blockToCustomCode รองรับ repeat อย่างถูกต้อง ----------
+function blockToCustomCode(block) {
+  if (!block) return '';
+
+  // custom block
+  if (CUSTOM_BLOCK_CODE[block.type]) {
+    const val = CUSTOM_BLOCK_CODE[block.type];
+    const code = (typeof val === "function") ? val(block) : val;
+    if (block.outputConnection) return code.trim();
+    return code + blockToCustomCode(block.getNextBlock());
   }
-  
-  // Built-in block
-  let pyCode = Blockly.Python.blockToCode(block);
-  if(Array.isArray(pyCode)) pyCode = pyCode[0]; // สำหรับ output block
-  return pyCode;
+
+  // repeat blocks
+  if (['controls_repeat_ext','controls_repeat','controls_repeat_simple'].includes(block.type)) {
+    let py = Blockly.Python.blockToCode(block);
+    if (Array.isArray(py)) py = py[0];
+    return py + blockToCustomCode(block.getNextBlock());
+  }
+
+  // default
+  let py = Blockly.Python.blockToCode(block);
+  if (Array.isArray(py)) py = py[0];
+  return (py || '') + blockToCustomCode(block.getNextBlock());
 }
 
-// ---------- Update code display ----------
+// Fix valueToCode ให้รองรับ custom block
+const oldValueToCode = Blockly.Python.valueToCode;
+Blockly.Python.valueToCode = function(block, name, order) {
+  const target = block.getInputTargetBlock(name);
+  if (target && CUSTOM_BLOCK_CODE[target.type]) {
+    const val = CUSTOM_BLOCK_CODE[target.type];
+    return (typeof val === 'function' ? val(target) : val);
+  }
+  return oldValueToCode.call(this, block, name, order);
+};
+
+// ---------- live update ----------
 const codeOutput = document.getElementById("code-output");
 function updateCodeDisplay() {
   const topBlocks = workspace.getTopBlocks(true);
-  let codeLines = [];
-  topBlocks.forEach(block => {
-    codeLines.push(getCodeFromBlock(block));
-  });
-  codeOutput.textContent = codeLines.join('');
+  let allCode = "";
+  topBlocks.forEach(block => allCode += blockToCustomCode(block));
+  codeOutput.textContent = allCode.trim() || "# ลากบล็อกมาเพื่อสร้างโปรแกรม";
 }
-
 workspace.addChangeListener(updateCodeDisplay);
 updateCodeDisplay();
 
@@ -136,12 +172,12 @@ updateCodeDisplay();
 document.getElementById("clearBtn").onclick = () => { workspace.clear(); updateCodeDisplay(); };
 document.getElementById("exportBtn").onclick = () => {
   navigator.clipboard.writeText(codeOutput.textContent);
-  alert("คัดลอกโค้ดไป clipboard แล้ว!");
+  alert("คัดลอกโค้ดแล้ว ✅");
 };
 document.getElementById("runBtn").onclick = () => {
   const result = document.getElementById("runResult");
   const code = codeOutput.textContent;
-  result.textContent = code.trim() === '' ? '⚠️ ไม่มีโค้ดให้รัน' : '🚀 (โค้ดจำลอง)\n\n' + code;
+  result.textContent = code.trim()=='' ? '⚠️ ไม่มีโค้ดให้รัน' : '🚀 (โค้ดจำลอง)\n\n' + code;
 };
 </script>
 </body>
